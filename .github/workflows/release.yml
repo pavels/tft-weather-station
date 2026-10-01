@@ -1,0 +1,96 @@
+# Builds, signs and publishes an OTA release when a version tag (v1.2.3) is
+# pushed. The tag must match OTAVERSION in version.h. Needs the repository
+# secret OTA_SIGNING_KEY: the RSA-2048 private key (PEM) matching the committed
+# components/ota_update/ota_public_key.pem (see tools/sign_release.py keygen).
+#
+# Release assets, at fixed names so devices can use
+# releases/latest/download/<name>: firmware.bin, firmware.manifest.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  # ESP8266_RTOS_SDK revision the firmware is developed against (v3.4-114).
+  SDK_COMMIT: 57350732cb9f4db41d29352a614c21d58e357f3d
+  IDF_PATH: ${{ github.workspace }}/ESP8266_RTOS_SDK
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: project
+          submodules: recursive
+
+      - name: Check the tag matches version.h
+        working-directory: project
+        run: |
+          version=$(sed -n 's/^#define OTAVERSION "\(.*\)"/\1/p' version.h)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME doesn't match version.h ($version)"
+            exit 1
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache SDK and toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            ESP8266_RTOS_SDK
+            ~/.espressif
+          key: esp8266-rtos-sdk-${{ env.SDK_COMMIT }}-py3.12
+
+      - name: Install SDK and toolchain
+        run: |
+          sudo apt-get install -y ninja-build
+          if [ ! -d "$IDF_PATH" ]; then
+            git clone https://github.com/espressif/ESP8266_RTOS_SDK.git "$IDF_PATH"
+            git -C "$IDF_PATH" checkout "$SDK_COMMIT"
+            # libcoap's mirror isn't reachable, and coap isn't used.
+            git -C "$IDF_PATH" -c submodule.components/coap/libcoap.update=none \
+              submodule update --init --recursive
+          fi
+          "$IDF_PATH/install.sh"
+          # The SDK's dependency check imports pkg_resources, which setuptools
+          # 81 removed (80.10.2 is known to work).
+          for env in ~/.espressif/python_env/rtos3.4_py*_env; do
+            "$env/bin/pip" install "setuptools<81"
+          done
+
+      - name: Build
+        working-directory: project
+        run: |
+          . "$IDF_PATH/export.sh"
+          cp credentials.h.example credentials.h
+          idf.py build
+
+      - name: Sign
+        working-directory: project
+        env:
+          OTA_SIGNING_KEY: ${{ secrets.OTA_SIGNING_KEY }}
+        run: |
+          key=$(mktemp)
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$OTA_SIGNING_KEY" > "$key"
+          cp build/tft_weather_station.bin firmware.bin
+          python3 tools/sign_release.py sign firmware.bin "$key" firmware.manifest
+          # Against the committed public key, i.e. the one the firmware trusts.
+          python3 tools/sign_release.py verify firmware.bin firmware.manifest
+
+      - name: Publish
+        working-directory: project
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" firmware.bin firmware.manifest \
+            --title "$GITHUB_REF_NAME" --generate-notes

@@ -1,0 +1,20 @@
+# Board has 4MB (32Mbit) flash.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+
+# No WPA3: the fleet is WPA2-only. Shrinks the WiFi driver's ppT task stack
+# from 5120 to 2048 bytes (~3KB more heap); the WPA3 code itself stays linked,
+# the SDK hardcodes it.
+# CONFIG_ESP8266_WIFI_ENABLE_WPA3_SAE is not set
+
+# HTTPS for OTA downloads, run in update mode next to WiFi: TLS buffers are
+# allocated only while in use, and the server certificate and config data are
+# freed after the handshake -- without this the handshake left <3KB of heap
+# and stalled. Client only: the device never serves TLS.
+CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
+CONFIG_MBEDTLS_DYNAMIC_FREE_PEER_CERT=y
+CONFIG_MBEDTLS_DYNAMIC_FREE_CONFIG_DATA=y
+CONFIG_MBEDTLS_TLS_CLIENT_ONLY=y

@@ -1,0 +1,14 @@
+# Name,   Type, SubType, Offset,   Size, Flags
+nvs,      data, nvs,     0x9000,   0x4000,
+otadata,  data, ota,     0xd000,   0x2000,
+phy_init, data, phy,     0xf000,   0x1000,
+# Two app slots: the running one downloads updates into the other.
+ota_0,    app,  ota_0,   0x10000,  0xF0000,
+ota_1,    app,  ota_1,   0x110000, 0xF0000,
+# Weather icons (resources/gen_icon_blob.py -> icons.bin, served by app/src/IconFs.c),
+# kept out of the app image so it fits the ESP8266's ~960KB mapped-flash window.
+# Flashed by `idf.py flash` along with the app. Custom data subtype, found by name.
+# Two slots of equal size, so an icon update can be written next to the set in
+# use; the app reads "icons", "icons_b" is blank.
+icons_b,  data, 0x40,    0x210000, 0xF0000,
+icons,    data, 0x40,    0x300000, 0xF0000,

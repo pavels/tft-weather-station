@@ -1,0 +1,11 @@
+build/
+sdkconfig
+sdkconfig.old
+credentials.h
+simulator/build/
+# Local release signing outputs and keys (the public key in components/ota_update/ is committed)
+firmware.bin
+firmware.manifest
+*private*.pem
+ota_signing_key*.pem
+.wrangler
